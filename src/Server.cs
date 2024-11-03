@@ -8,13 +8,33 @@ Console.WriteLine("Logs from your program will appear here!");
 // Uncomment this block to pass the first stage
 TcpListener server = new TcpListener(IPAddress.Any, 6379);
 server.Start();
-var clientSocket = server.AcceptSocket(); // wait for client
+var clientSocket = server.AcceptSocket(); // wait for client, AcceptSocket is blocking 
 
-byte[] PongResponse = Encoding.UTF8.GetBytes("+PONG\r\n");
-await clientSocket.SendAsync(PongResponse, SocketFlags.None);
+var buffer = new byte[1024];
+var inputBuilder = new StringBuilder();
+int bytesRead;
+var pongResponse = "+PONG\r\n"u8.ToArray();
 
-// TcpClient client = server.AcceptTcpClient();
-// NetworkStream stream = client.GetStream();
-// string message = $"+PONG\\r\\n";
-// byte[] responseBytes = Encoding.ASCII.GetBytes(message);
-// stream.Write(responseBytes, 0, responseBytes.Length);
+while ((bytesRead = await clientSocket.ReceiveAsync(new ArraySegment<byte>(buffer), SocketFlags.None)) > 0)
+{
+    if (bytesRead == 0)
+    {
+        break;
+    }
+    
+    string message = Encoding.UTF8.GetString(buffer, 0, bytesRead);
+    inputBuilder.Append(message);
+    
+    var lines = inputBuilder.ToString().Split(new[] { '\n' }, StringSplitOptions.RemoveEmptyEntries);
+    var pingCount = lines.Aggregate(0, (count, line) => count + (line.Trim() == "PING" ? 1 : 0));
+    
+    if (inputBuilder.Length > 0 && inputBuilder[^1] == '\n')
+    {
+        for (var i = 0; i < pingCount; i++)
+        {
+            await clientSocket.SendAsync(new ArraySegment<byte>(pongResponse), SocketFlags.None);
+        }
+        
+        inputBuilder.Clear();
+    }
+}
