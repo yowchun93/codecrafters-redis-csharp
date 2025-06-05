@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
+using System.Collections.Concurrent;
 
 // You can use print statements as follows for debugging, they'll be visible when running tests.
 Console.WriteLine("Logs from your program will appear here!");
@@ -64,6 +65,26 @@ static async Task HandleConnectionAsync(Socket clientSocket)
                 var responseBytes = Encoding.UTF8.GetBytes(response);
                 await clientSocket.SendAsync(responseBytes, SocketFlags.None);
             }
+            else if (command == "SET" && args.Count == 2)
+            {
+                RedisStore.Store[args[0]] = args[1];
+                var okResponse = Encoding.UTF8.GetBytes("+OK\r\n");
+                await clientSocket.SendAsync(okResponse, SocketFlags.None);
+            }
+            else if (command == "GET" && args.Count == 1)
+            {
+                if (RedisStore.Store.TryGetValue(args[0], out var value))
+                {
+                    string response = $"${value.Length}\r\n{value}\r\n";
+                    var responseBytes = Encoding.UTF8.GetBytes(response);
+                    await clientSocket.SendAsync(responseBytes, SocketFlags.None);
+                }
+                else
+                {
+                    var nullResponse = Encoding.UTF8.GetBytes("$-1\r\n");
+                    await clientSocket.SendAsync(nullResponse, SocketFlags.None);
+                }
+            }
             else
             {
                 string error = "-ERR unknown command\r\n";
@@ -83,6 +104,11 @@ static async Task HandleConnectionAsync(Socket clientSocket)
         clientSocket.Close();
         Console.WriteLine("Client disconnected");
     }
+}
+
+static class RedisStore
+{
+    public static readonly ConcurrentDictionary<string, string> Store = new();
 }
 
 static class RedisParser
